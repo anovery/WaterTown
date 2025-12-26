@@ -1,0 +1,29 @@
+# vcpkg
+vcpkg_installed/
+.vcpkg/
+
+# 编译输出
+build/
+out/
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# VSCode
+.vscode/
+
+# MinGW/GCC
+*.o
+*.exe
+*.dll
+*.so
+*.a
+
+# 其他临时文件
+*.log
+
+# 一些特殊文件
+intro/

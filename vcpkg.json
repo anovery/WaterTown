@@ -1,0 +1,15 @@
+{
+     "name": "watertown",
+     "version": "1.0.0",
+     "description": "Jiangnan Water Town Scene System with OpenGL",
+     "dependencies": [
+       "glfw3",
+       "glad",
+       "glm",
+       {
+         "name": "imgui",
+         "features": ["glfw-binding", "opengl3-binding"]
+       }
+     ],
+     "builtin-baseline": "5d57f5a0a5469a23e005fc79a7c1814ab4fc967e"
+   }

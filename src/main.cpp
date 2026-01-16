@@ -1,6 +1,12 @@
 #include "Core/Application.h"
 #include "Render/Shader.h"
 #include "Render/Camera.h"
+#include "Render/BoatRenderer.h"
+#include "Render/TerrainRenderer.h"
+#include "Render/ObjectRenderer.h"
+#include "Water/WaterSurface.h"
+#include "Editor/SceneEditor.h"
+#include "Editor/EditorUI.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -9,11 +15,11 @@
 using namespace WaterTown;
 
 /**
- * @brief 渲染带光照的立方体
+ * @brief 场景编辑器应用
  */
 class WaterTownApp : public Application {
 public:
-    WaterTownApp() : Application(1280, 720, "WaterTown") {}
+    WaterTownApp() : Application(1280, 720, "WaterTown - Scene Editor") {}
     
 protected:
     void onInit() override {
@@ -27,10 +33,33 @@ protected:
         
         // 加载着色器
         m_shader = new Shader("assets/shaders/basic.vert", "assets/shaders/basic.frag");
+        m_waterShader = new Shader("assets/shaders/water.vert", "assets/shaders/water.frag");
         
-        // 创建相机
+        // 创建水面
+        m_waterSurface = new WaterSurface(0.0f, 0.0f, 30.0f, 30.0f, 100);
+        m_waterSurface->setBaseHeight(-1.0f);  // 水面在 Y = -1 位置
+        
+        // 创建场景编辑器
+        m_sceneEditor = new SceneEditor();
         float aspectRatio = getWindow()->getAspectRatio();
-        m_camera = new FreeCamera(glm::vec3(0.0f, 0.0f, 5.0f), 45.0f, aspectRatio);
+        m_sceneEditor->init(aspectRatio);
+        m_sceneEditor->setWaterSurface(m_waterSurface);
+        
+        // 创建船只渲染器
+        m_boatRenderer = new BoatRenderer();
+        
+        // 创建地形渲染器
+        m_terrainRenderer = new TerrainRenderer(50);
+        
+        // 创建物体渲染器
+        m_objectRenderer = new ObjectRenderer();
+        
+        // 创建编辑器 UI
+        m_editorUI = new EditorUI();
+        m_editorUI->init(m_sceneEditor);
+        
+        // 使用编辑器的相机（默认从地形编辑模式开始）
+        m_camera = m_sceneEditor->getCurrentCamera();
         
         // 设置窗口回调
         auto* window = getWindow()->getGLFWWindow();
@@ -40,35 +69,15 @@ protected:
         auto resizeCallback = [](GLFWwindow* win, int width, int height) {
             glViewport(0, 0, width, height);
             auto* app = static_cast<WaterTownApp*>(glfwGetWindowUserPointer(win));
-            if (app && app->m_camera) {
+            if (app && app->m_sceneEditor) {
                 float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-                app->m_camera->updateAspectRatio(aspectRatio);
+                app->m_sceneEditor->updateAspectRatio(aspectRatio);
             }
         };
         getWindow()->setResizeCallback(resizeCallback);
         
-        // 鼠标移动回调
-        auto cursorCallback = [](GLFWwindow* win, double xpos, double ypos) {
-            auto* app = static_cast<WaterTownApp*>(glfwGetWindowUserPointer(win));
-            if (!app) return;
-            
-            if (app->m_firstMouse) {
-                app->m_lastX = static_cast<float>(xpos);
-                app->m_lastY = static_cast<float>(ypos);
-                app->m_firstMouse = false;
-            }
-            
-            float xoffset = static_cast<float>(xpos) - app->m_lastX;
-            float yoffset = app->m_lastY - static_cast<float>(ypos);
-            
-            app->m_lastX = static_cast<float>(xpos);
-            app->m_lastY = static_cast<float>(ypos);
-            
-            if (app->m_camera && app->m_mouseCaptured) {
-                app->m_camera->processMouseMovement(xoffset, yoffset);
-            }
-        };
-        getWindow()->setCursorPosCallback(cursorCallback);
+        // 不手动设置鼠标回调，让 ImGui 处理
+        // 我们将在 onUpdate 中直接获取鼠标位置
         
         // 默认不启用鼠标捕获，按住鼠标右键时才启用
         m_mouseCaptured = false;
@@ -89,9 +98,50 @@ protected:
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
         
-        // 检测鼠标右键状态
+        // 检测鼠标左键点击（用于地形/建筑编辑）
+        bool wantCaptureMouse = ImGui::GetIO().WantCaptureMouse;
+        static bool leftButtonPressed = false;
+        int leftButtonState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+        
+        if (leftButtonState == GLFW_PRESS && !leftButtonPressed && !wantCaptureMouse) {
+            leftButtonPressed = true;
+            
+            // 获取鼠标位置
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+            
+            // 获取窗口大小
+            int width, height;
+            glfwGetWindowSize(window, &width, &height);
+            
+            // 检查是否按住 Ctrl 键（删除模式）
+            bool ctrlPressed = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+                              (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+            
+            // 处理点击
+            if (m_sceneEditor) {
+                if (ctrlPressed && m_sceneEditor->getCurrentMode() == EditorMode::BUILDING) {
+                    // Ctrl + 左键：删除建筑物
+                    int gridX, gridZ;
+                    if (m_sceneEditor->raycastToGround(static_cast<float>(xpos), static_cast<float>(ypos), width, height, gridX, gridZ)) {
+                        float cellSize = 0.5f;
+                        float worldX = (gridX - 25 + 0.5f) * cellSize;
+                        float worldZ = (gridZ - 25 + 0.5f) * cellSize;
+                        m_sceneEditor->removeObjectNear(glm::vec3(worldX, 0.0f, worldZ), 1.0f);
+                    }
+                } else {
+                    // 普通左键：放置地形/建筑
+                    m_sceneEditor->handleMouseClick(static_cast<float>(xpos), static_cast<float>(ypos), width, height);
+                }
+            }
+        }
+        else if (leftButtonState == GLFW_RELEASE) {
+            leftButtonPressed = false;
+        }
+        
+        // 检测鼠标右键状态，但只在鼠标不在 ImGui 窗口上时捕获
         int rightButtonState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
-        bool shouldCapture = (rightButtonState == GLFW_PRESS);
+        bool shouldCapture = (rightButtonState == GLFW_PRESS) && !wantCaptureMouse;
         
         // 只有在状态改变时才更新鼠标捕获模式
         if (shouldCapture != m_mouseCaptured) {
@@ -104,31 +154,55 @@ protected:
             }
         }
         
-        // 相机移动
-        if (m_camera) {
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_W, deltaTime);
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_S, deltaTime);
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_A, deltaTime);
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_D, deltaTime);
-            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_SPACE, deltaTime);
-            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-                m_camera->processKeyboard(GLFW_KEY_LEFT_SHIFT, deltaTime);
+        // 处理鼠标移动（当鼠标被捕获时）
+        if (m_mouseCaptured && m_sceneEditor) {
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+            
+            if (m_firstMouse) {
+                m_lastX = static_cast<float>(xpos);
+                m_lastY = static_cast<float>(ypos);
+                m_firstMouse = false;
+            }
+            
+            float xoffset = static_cast<float>(xpos) - m_lastX;
+            float yoffset = m_lastY - static_cast<float>(ypos);
+            
+            m_lastX = static_cast<float>(xpos);
+            m_lastY = static_cast<float>(ypos);
+            
+            m_sceneEditor->handleMouseMovement(xoffset, yoffset, true);
+        }
+        
+        // 游戏模式下处理船只控制 (WASD)
+        if (m_sceneEditor && m_sceneEditor->getCurrentMode() == EditorMode::GAME) {
+            float forward = 0.0f;
+            float turn = 0.0f;
+            
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) forward += 1.0f;
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) forward -= 1.0f;
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) turn += 1.0f;
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) turn -= 1.0f;
+            
+            m_sceneEditor->handleGameInput(forward, turn);
+        }
+        
+        // 更新场景编辑器
+        if (m_sceneEditor) {
+            m_sceneEditor->update(deltaTime);
+            m_camera = m_sceneEditor->getCurrentCamera();  // 更新当前相机
         }
     }
     
     void onRender() override {
         if (!m_shader || !m_camera) return;
         
-        // 使用着色器
+        // === 渲染立方体 ===
         m_shader->use();
         
         // 设置 MVP 矩阵
         glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));  // 放在水面上方
         model = glm::rotate(model, (float)glfwGetTime() * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
         
         glm::mat4 view = m_camera->getViewMatrix();
@@ -149,45 +223,41 @@ protected:
         glBindVertexArray(m_cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
         glBindVertexArray(0);
+        
+        // === 渲染地形网格（所有模式） ===
+        if (m_sceneEditor && m_terrainRenderer && m_shader) {
+            m_terrainRenderer->render(m_sceneEditor, m_shader, m_camera);
+        }
+        
+        // === 渲染放置的物体（所有模式） ===
+        if (m_sceneEditor && m_objectRenderer && m_shader) {
+            // 清除并重新添加所有物体
+            m_objectRenderer->clear();
+            const auto& objects = m_sceneEditor->getPlacedObjects();
+            for (const auto& obj : objects) {
+                m_objectRenderer->addObject(obj.first, obj.second);
+            }
+            m_objectRenderer->render(m_shader, m_camera);
+        }
+        
+        // === 渲染水面 ===
+        if (m_waterSurface && m_waterShader) {
+            m_waterSurface->render(m_waterShader, m_camera, static_cast<float>(glfwGetTime()));
+        }
+        
+        // === 渲染船只（游戏模式） ===
+        if (m_sceneEditor && m_sceneEditor->getCurrentMode() == EditorMode::GAME) {
+            if (m_boatRenderer && m_sceneEditor->getBoat() && m_shader) {
+                m_boatRenderer->render(m_sceneEditor->getBoat(), m_shader, m_camera);
+            }
+        }
     }
     
     void onImGui() override {
-        ImGui::Begin("WaterTown Demo");
-        
-        ImGui::Text("Basic Rendering System");
-        ImGui::Separator();
-        
-        ImGui::Text("Performance");
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        ImGui::Text("Frame Time: %.3f ms", 1000.0f / ImGui::GetIO().Framerate);
-        
-        ImGui::Separator();
-        ImGui::Text("Camera Info");
-        if (m_camera) {
-            glm::vec3 pos = m_camera->getPosition();
-            ImGui::Text("Position: (%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
+        // 使用编辑器 UI
+        if (m_editorUI) {
+            m_editorUI->render();
         }
-        ImGui::Text("Mouse Captured: %s", m_mouseCaptured ? "Yes" : "No");
-        
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Status: All Systems OK!");
-        
-        ImGui::Separator();
-        ImGui::Text("Controls:");
-        ImGui::BulletText("WASD - Move camera");
-        ImGui::BulletText("Space/Shift - Up/Down");
-        ImGui::BulletText("Hold Right Mouse - Look around");
-        ImGui::BulletText("ESC - Exit");
-        
-        ImGui::Separator();
-        ImGui::Text("Demo Checklist:");
-        ImGui::BulletText("Window system");
-        ImGui::BulletText("Shader system");
-        ImGui::BulletText("Camera system");
-        ImGui::BulletText("Phong lighting");
-        ImGui::BulletText("ImGui integration");
-        
-        ImGui::End();
     }
     
     void onShutdown() override {
@@ -200,14 +270,28 @@ protected:
         }
         
         delete m_shader;
-        delete m_camera;
+        delete m_waterShader;
+        delete m_waterSurface;
+        delete m_sceneEditor;
+        delete m_editorUI;
+        delete m_boatRenderer;
+        delete m_terrainRenderer;
+        delete m_objectRenderer;
+        // 注意：m_camera 由 SceneEditor 管理，不需要单独删除
         
         std::cout << "WaterTown Demo shutdown complete." << std::endl;
     }
 
 private:
     Shader* m_shader = nullptr;
-    FreeCamera* m_camera = nullptr;
+    Shader* m_waterShader = nullptr;
+    WaterSurface* m_waterSurface = nullptr;
+    SceneEditor* m_sceneEditor = nullptr;
+    EditorUI* m_editorUI = nullptr;
+    BoatRenderer* m_boatRenderer = nullptr;
+    TerrainRenderer* m_terrainRenderer = nullptr;
+    ObjectRenderer* m_objectRenderer = nullptr;
+    Camera* m_camera = nullptr;  // 指向当前相机（由 SceneEditor 管理）
     
     unsigned int m_cubeVAO = 0;
     unsigned int m_cubeVBO = 0;

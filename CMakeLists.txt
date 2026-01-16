@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.15)
 
 # ===== 重要：指定 vcpkg 安装目录 =====
 # 这会让 vcpkg 使用项目根目录的 vcpkg_installed，而不是在 build 里重新安装
-set(VCPKG_INSTALLED_DIR "${CMAKE_SOURCE_DIR}/vcpkg_installed" CACHE PATH "vcpkg installed directory")
-message(STATUS "Using vcpkg installed directory: ${VCPKG_INSTALLED_DIR}")
+# set(VCPKG_INSTALLED_DIR "${CMAKE_SOURCE_DIR}/vcpkg_installed" CACHE PATH "vcpkg installed directory")
+# message(STATUS "Using vcpkg installed directory: ${VCPKG_INSTALLED_DIR}")
 
 project(WaterTown VERSION 1.0.0 LANGUAGES CXX)
 
 # 设置C++标准
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14) #因为我自己的g++版本不够，这里改成了14
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

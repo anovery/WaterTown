@@ -1,5 +1,6 @@
 #include "Window.h"
 #include <iostream>
+#include <stdexcept>
 
 namespace WaterTown {
 

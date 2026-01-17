@@ -10,6 +10,17 @@ uniform vec3 uWaterColor;
 uniform vec3 uLightDir;
 uniform float uTime;
 
+uniform int uUseBoatCutout;
+uniform vec3 uBoatPos;
+uniform float uBoatCutoutInner;
+uniform float uBoatCutoutOuter;
+
+// 0=circle, 1=OBB(rect) in XZ
+uniform int uBoatCutoutShape;
+uniform vec2 uBoatForwardXZ;
+uniform vec2 uBoatHalfExtentsXZ;
+uniform float uBoatCutoutFeather;
+
 out vec4 FragColor;
 
 const vec3 deepWaterColor = vec3(0.0, 0.1, 0.3);
@@ -22,6 +33,41 @@ float fresnelSchlick(float cosTheta, float F0) {
 }
 
 void main() {
+    // 船只附近水面裁剪：避免水出现在船板/船舱视线里
+    float cutoutMask = 1.0;
+    if (uUseBoatCutout == 1) {
+        if (uBoatCutoutShape == 1) {
+            // OBB：用船前向定义局部坐标，做“矩形”裁剪
+            vec2 delta = FragPos.xz - uBoatPos.xz;
+            vec2 f = uBoatForwardXZ;
+            float fl = length(f);
+            if (fl < 1e-5) {
+                f = vec2(0.0, 1.0);
+            } else {
+                f /= fl;
+            }
+            vec2 r = vec2(f.y, -f.x);
+
+            // local.x = right, local.y = forward
+            vec2 local = vec2(dot(delta, r), dot(delta, f));
+            vec2 d = abs(local) - uBoatHalfExtentsXZ;
+            float outsideDist = max(d.x, d.y);
+
+            // outsideDist <= 0 表示在矩形内。
+            // 关键：羽化只发生在“矩形内部边缘”（[-feather, 0]），矩形外部始终为 1，避免在船周围看到一块颜色不一样的矩形。
+            float feather = max(uBoatCutoutFeather, 1e-5);
+            cutoutMask = smoothstep(-feather, 0.0, outsideDist);
+        } else {
+            // Circle：旧逻辑
+            float distXZ = distance(FragPos.xz, uBoatPos.xz);
+            cutoutMask = smoothstep(uBoatCutoutInner, uBoatCutoutOuter, distXZ);
+        }
+
+        if (cutoutMask <= 0.001) {
+            discard;
+        }
+    }
+
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(uViewPos - FragPos);
     vec3 lightDir = normalize(uLightDir);
@@ -57,6 +103,10 @@ void main() {
     
     // 透明度（基于菲涅尔效应）
     float alpha = mix(0.7, 0.95, fresnel);
+    if (uUseBoatCutout == 1) {
+        alpha *= cutoutMask;
+        if (alpha <= 0.01) discard;
+    }
     
     FragColor = vec4(color, alpha);
 }

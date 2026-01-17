@@ -40,8 +40,25 @@ public:
      * @param shader 水面着色器
      * @param camera 当前相机
      * @param time 当前时间（秒）
+        * @param boatPos 船只世界坐标（用于水面裁剪，防止水出现在船板上）
+        * @param boatCutoutInner 船只裁剪内半径（<=0 表示禁用）
+        * @param boatCutoutOuter 船只裁剪外半径（用于羽化边缘，需 >= inner）
      */
-    void render(Shader* shader, Camera* camera, float time);
+        void render(Shader* shader,
+                 Camera* camera,
+                 float time,
+                 const glm::vec3& boatPos = glm::vec3(0.0f),
+                 float boatCutoutInner = 0.0f,
+                 float boatCutoutOuter = 0.0f,
+                 glm::vec2 boatForwardXZ = glm::vec2(0.0f, 1.0f),
+                 glm::vec2 boatHalfExtentsXZ = glm::vec2(0.0f),
+                 float boatCutoutFeather = 0.0f);
+
+    /**
+     * @brief 更新水面网格（用于自定义形状的水面）
+     * @param vertices 顶点数据 (x, y, z, u, v) x N
+     */
+    void updateMesh(const std::vector<float>& vertices);
     
     /**
      * @brief 获取指定位置的水面高度（用于船只浮力计算）
@@ -76,6 +93,7 @@ private:
     unsigned int m_VAO, m_VBO, m_EBO;
     int m_vertexCount;
     int m_indexCount;
+    bool m_useCustomMesh; // 是否使用自定义网格
     
     // 水面参数
     float m_centerX, m_centerZ;

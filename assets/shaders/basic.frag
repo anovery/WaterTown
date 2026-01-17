@@ -2,11 +2,13 @@
 
 in vec3 FragPos;
 in vec3 Normal;
+in vec3 VertexColor;
 
 uniform vec3 uLightPos;
 uniform vec3 uViewPos;
 uniform vec3 uObjectColor;
 uniform vec3 uLightColor;
+uniform bool uUseVertexColor;
 
 out vec4 FragColor;
 
@@ -29,7 +31,8 @@ void main()
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
     vec3 specular = specularStrength * spec * uLightColor;
     
+    vec3 baseColor = uUseVertexColor ? VertexColor : uObjectColor;
     // 最终颜色
-    vec3 result = (ambient + diffuse + specular) * uObjectColor;
+    vec3 result = (ambient + diffuse + specular) * baseColor;
     FragColor = vec4(result, 1.0);
 }

@@ -7,6 +7,7 @@
 #include "Water/WaterSurface.h"
 #include "Editor/SceneEditor.h"
 #include "Editor/EditorUI.h"
+#include "Physics/Boat.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -36,8 +37,8 @@ protected:
         m_waterShader = new Shader("assets/shaders/water.vert", "assets/shaders/water.frag");
         
         // 创建水面
-        m_waterSurface = new WaterSurface(0.0f, 0.0f, 30.0f, 30.0f, 100);
-        m_waterSurface->setBaseHeight(-1.0f);  // 水面在 Y = -1 位置
+        m_waterSurface = new WaterSurface(0.0f, 0.0f, 160.0f, 160.0f, 100); // 320 * 0.5 = 160
+        m_waterSurface->setBaseHeight(SceneEditor::WATER_LEVEL);  // 水面高度
         
         // 创建场景编辑器
         m_sceneEditor = new SceneEditor();
@@ -49,7 +50,7 @@ protected:
         m_boatRenderer = new BoatRenderer();
         
         // 创建地形渲染器
-        m_terrainRenderer = new TerrainRenderer(50);
+        m_terrainRenderer = new TerrainRenderer(SceneEditor::GRID_SIZE);
         
         // 创建物体渲染器
         m_objectRenderer = new ObjectRenderer();
@@ -98,30 +99,49 @@ protected:
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
         
-        // 检测鼠标左键点击（用于地形/建筑编辑）
+        // 检测鼠标左键(用于地形/建筑编辑)
         bool wantCaptureMouse = ImGui::GetIO().WantCaptureMouse;
         static bool leftButtonPressed = false;
         int leftButtonState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
         
-        if (leftButtonState == GLFW_PRESS && !leftButtonPressed && !wantCaptureMouse) {
+        // 检查是否按住 Ctrl 键
+        bool ctrlPressed = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+                          (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+        
+        // Ctrl+Z 撤销快捷键
+        static bool zKeyPressed = false;
+        if (ctrlPressed && glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS && !zKeyPressed) {
+            zKeyPressed = true;
+            if (m_sceneEditor) {
+                m_sceneEditor->undoLastAction();
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_RELEASE) {
+            zKeyPressed = false;
+        }
+        
+        // 地形编辑模式:支持按住鼠标左键连续绘制
+        if (m_sceneEditor && m_sceneEditor->getCurrentMode() == EditorMode::TERRAIN) {
+            if (leftButtonState == GLFW_PRESS && !wantCaptureMouse) {
+                double xpos, ypos;
+                glfwGetCursorPos(window, &xpos, &ypos);
+                int width, height;
+                glfwGetWindowSize(window, &width, &height);
+                m_sceneEditor->handleMouseClick(static_cast<float>(xpos), static_cast<float>(ypos), width, height);
+            }
+        }
+        // 建筑放置模式:单击放置
+        else if (leftButtonState == GLFW_PRESS && !leftButtonPressed && !wantCaptureMouse) {
             leftButtonPressed = true;
             
-            // 获取鼠标位置
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
-            
-            // 获取窗口大小
             int width, height;
             glfwGetWindowSize(window, &width, &height);
             
-            // 检查是否按住 Ctrl 键（删除模式）
-            bool ctrlPressed = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
-                              (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
-            
-            // 处理点击
             if (m_sceneEditor) {
                 if (ctrlPressed && m_sceneEditor->getCurrentMode() == EditorMode::BUILDING) {
-                    // Ctrl + 左键：删除建筑物
+                    // Ctrl + 左键:删除建筑物
                     int gridX, gridZ;
                     if (m_sceneEditor->raycastToGround(static_cast<float>(xpos), static_cast<float>(ypos), width, height, gridX, gridZ)) {
                         float cellSize = 0.5f;
@@ -130,12 +150,13 @@ protected:
                         m_sceneEditor->removeObjectNear(glm::vec3(worldX, 0.0f, worldZ), 1.0f);
                     }
                 } else {
-                    // 普通左键：放置地形/建筑
+                    // 普通左键:放置建筑
                     m_sceneEditor->handleMouseClick(static_cast<float>(xpos), static_cast<float>(ypos), width, height);
                 }
             }
         }
-        else if (leftButtonState == GLFW_RELEASE) {
+        
+        if (leftButtonState == GLFW_RELEASE) {
             leftButtonPressed = false;
         }
         
@@ -174,6 +195,36 @@ protected:
             m_sceneEditor->handleMouseMovement(xoffset, yoffset, true);
         }
         
+        // 检测中键拖动(用于建筑模式平移相机)
+        static bool middleButtonPressed = false;
+        static bool middleFirstMouse = true;
+        static float middleLastX = 0.0f, middleLastY = 0.0f;
+        int middleButtonState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE);
+        
+        if (middleButtonState == GLFW_PRESS && !wantCaptureMouse && m_sceneEditor) {
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+            
+            if (!middleButtonPressed || middleFirstMouse) {
+                middleLastX = static_cast<float>(xpos);
+                middleLastY = static_cast<float>(ypos);
+                middleFirstMouse = false;
+                middleButtonPressed = true;
+            } else {
+                float xoffset = static_cast<float>(xpos) - middleLastX;
+                float yoffset = static_cast<float>(ypos) - middleLastY;
+                
+                middleLastX = static_cast<float>(xpos);
+                middleLastY = static_cast<float>(ypos);
+                
+                m_sceneEditor->handleMiddleMouseMovement(xoffset, yoffset);
+            }
+        }
+        else if (middleButtonState == GLFW_RELEASE) {
+            middleButtonPressed = false;
+            middleFirstMouse = true;
+        }
+        
         // 游戏模式下处理船只控制 (WASD)
         if (m_sceneEditor && m_sceneEditor->getCurrentMode() == EditorMode::GAME) {
             float forward = 0.0f;
@@ -197,41 +248,32 @@ protected:
     void onRender() override {
         if (!m_shader || !m_camera) return;
         
-        // === 渲染立方体 ===
-        m_shader->use();
+        // === 旋转立方体已注释 ===
+        // m_shader->use();
+        // glm::mat4 model = glm::mat4(1.0f);
+        // model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
+        // model = glm::rotate(model, (float)glfwGetTime() * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
+        // glm::mat4 view = m_camera->getViewMatrix();
+        // glm::mat4 projection = m_camera->getProjectionMatrix();
+        // m_shader->setMat4("uModel", model);
+        // m_shader->setMat4("uView", view);
+        // m_shader->setMat4("uProjection", projection);
+        // glm::vec3 lightPos(1.2f, 1.0f, 2.0f);
+        // m_shader->setVec3("uLightPos", lightPos);
+        // m_shader->setVec3("uViewPos", m_camera->getPosition());
+        // m_shader->setVec3("uObjectColor", 1.0f, 0.5f, 0.31f);
+        // m_shader->setVec3("uLightColor", 1.0f, 1.0f, 1.0f);
+        // glBindVertexArray(m_cubeVAO);
+        // glDrawArrays(GL_TRIANGLES, 0, 36);
+        // glBindVertexArray(0);
         
-        // 设置 MVP 矩阵
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));  // 放在水面上方
-        model = glm::rotate(model, (float)glfwGetTime() * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
-        
-        glm::mat4 view = m_camera->getViewMatrix();
-        glm::mat4 projection = m_camera->getProjectionMatrix();
-        
-        m_shader->setMat4("uModel", model);
-        m_shader->setMat4("uView", view);
-        m_shader->setMat4("uProjection", projection);
-        
-        // 设置光照参数
-        glm::vec3 lightPos(1.2f, 1.0f, 2.0f);
-        m_shader->setVec3("uLightPos", lightPos);
-        m_shader->setVec3("uViewPos", m_camera->getPosition());
-        m_shader->setVec3("uObjectColor", 1.0f, 0.5f, 0.31f);  // 橙色立方体
-        m_shader->setVec3("uLightColor", 1.0f, 1.0f, 1.0f);    // 白光
-        
-        // 绘制立方体
-        glBindVertexArray(m_cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        glBindVertexArray(0);
-        
-        // === 渲染地形网格（所有模式） ===
+        // === 渲染地形网格(所有模式) ===
         if (m_sceneEditor && m_terrainRenderer && m_shader) {
             m_terrainRenderer->render(m_sceneEditor, m_shader, m_camera);
         }
         
-        // === 渲染放置的物体（所有模式） ===
+        // === 渲染放置的物体(所有模式) ===
         if (m_sceneEditor && m_objectRenderer && m_shader) {
-            // 清除并重新添加所有物体
             m_objectRenderer->clear();
             const auto& objects = m_sceneEditor->getPlacedObjects();
             for (const auto& obj : objects) {
@@ -240,15 +282,27 @@ protected:
             m_objectRenderer->render(m_shader, m_camera);
         }
         
-        // === 渲染水面 ===
-        if (m_waterSurface && m_waterShader) {
-            m_waterSurface->render(m_waterShader, m_camera, static_cast<float>(glfwGetTime()));
+        // === 渲染水面(仅在非地形编辑模式) ===
+        if (m_waterSurface && m_waterShader && m_sceneEditor) {
+            if (m_sceneEditor->getCurrentMode() != EditorMode::TERRAIN) {
+                m_waterSurface->render(m_waterShader, m_camera, static_cast<float>(glfwGetTime()));
+            }
         }
         
-        // === 渲染船只（游戏模式） ===
-        if (m_sceneEditor && m_sceneEditor->getCurrentMode() == EditorMode::GAME) {
-            if (m_boatRenderer && m_sceneEditor->getBoat() && m_shader) {
-                m_boatRenderer->render(m_sceneEditor->getBoat(), m_shader, m_camera);
+        // === 渲染船只(建筑模式和游戏模式) ===
+        if (m_sceneEditor && m_boatRenderer && m_shader) {
+            EditorMode mode = m_sceneEditor->getCurrentMode();
+            if (mode == EditorMode::GAME) {
+                // 游戏模式:渲染可控船只
+                if (m_sceneEditor->getBoat()) {
+                    m_boatRenderer->render(m_sceneEditor->getBoat(), m_shader, m_camera);
+                }
+            }
+            else if (mode == EditorMode::BUILDING && m_sceneEditor->hasBoatPlaced()) {
+                // 建筑模式:渲染已放置的船只(静态显示)
+                // 使用放置位置创建临时Boat渲染
+                Boat tempBoat(m_sceneEditor->getBoatPlacedPosition(), m_sceneEditor->getBoatPlacedRotation());
+                m_boatRenderer->render(&tempBoat, m_shader, m_camera);
             }
         }
     }

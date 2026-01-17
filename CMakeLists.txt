@@ -26,6 +26,7 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 message(STATUS "All packages found successfully!")
 
 # 收集源文件
@@ -54,6 +55,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glad::glad
     glm::glm
     imgui::imgui
+    assimp::assimp
 )
 
 # Windows + MinGW 特定设置

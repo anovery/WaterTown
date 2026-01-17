@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 namespace WaterTown {
 
@@ -89,8 +90,8 @@ void Boat::updateBuoyancy(WaterSurface* waterSurface, float currentTime) {
     
     // 船体中心高度（平均值）
     float avgHeight = (heightBow + heightStern + heightPort + heightStarboard) / 4.0f;
-    m_position.y = avgHeight + 0.3f;  // 船体稍微浮在水面上
-    
+    m_position.y = avgHeight + BOAT_WATERLINE_OFFSET;  // 让船体大多露出水面    
+
     // 计算俯仰角（船头船尾高度差）
     float pitchDiff = heightBow - heightStern;
     m_pitch = atan2(pitchDiff, BOAT_LENGTH) * (180.0f / 3.14159f);  // 转换为度
@@ -114,7 +115,58 @@ void Boat::clearObstacles() {
     m_obstacles.clear();
 }
 
+void Boat::syncToWaterSurface(WaterSurface* waterSurface, float currentTime) {
+    if (!waterSurface) return;
+    updateBuoyancy(waterSurface, currentTime);
+}
+
 void Boat::handleCollisions() {
+    // 地形碰撞检测 (回调)
+    if (m_collisionPredicate) {
+        // 多点检测：船头、船尾、左舷、右舷
+        float rotRad = glm::radians(m_rotation);
+        glm::vec3 forward(sin(rotRad), 0.0f, cos(rotRad));
+        glm::vec3 right(cos(rotRad), 0.0f, -sin(rotRad));
+        
+        // 稍微往外一点，作为探测触须
+        float checkDistLong = BOAT_LENGTH * 0.6f; 
+        float checkDistSide = BOAT_WIDTH * 0.8f; 
+        
+        glm::vec3 checkPoints[4] = {
+            m_position + forward * checkDistLong,  // Bow
+            m_position - forward * checkDistLong,  // Stern
+            m_position - right * checkDistSide,    // Port
+            m_position + right * checkDistSide     // Starboard
+        };
+
+        bool collided = false;
+        glm::vec3 collisionNormal(0.0f);
+
+        for(int i=0; i<4; ++i) {
+            if (!m_collisionPredicate(checkPoints[i].x, checkPoints[i].z)) {
+                collided = true;
+                // 推算反向法线：该点相对于中心的相反方向
+                collisionNormal -= glm::normalize(checkPoints[i] - m_position);
+            }
+        }
+        
+        if (collided) {
+            if (glm::length(collisionNormal) > 0.001f) {
+                collisionNormal = glm::normalize(collisionNormal);
+            } else {
+                // 如果法线抵消（也可能嵌入），默认反向移动
+                float sign = (m_speed >= 0.0f) ? 1.0f : -1.0f;
+                collisionNormal = -forward * sign;
+            }
+
+            // 强力推回
+            m_position += collisionNormal * 0.5f; 
+            
+            // 反弹
+            m_speed *= -0.5f;
+        }
+    }
+
     // 边界检测
     if (m_hasBounds) {
         bool collided = false;

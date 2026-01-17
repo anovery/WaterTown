@@ -72,8 +72,19 @@ void EditorUI::renderModePanel() {
         m_editor->switchMode(EditorMode::BUILDING);
     }
     
+    // 游戏模式按钮:未放置船只时禁用
+    bool canEnterGame = m_editor->canEnterGameMode();
+    if (!canEnterGame) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+    }
     if (ImGui::Button("Game Mode", ImVec2(-1, 30))) {
-        m_editor->switchMode(EditorMode::GAME);
+        if (canEnterGame) {
+            m_editor->switchMode(EditorMode::GAME);
+        }
+    }
+    if (!canEnterGame) {
+        ImGui::PopStyleVar();
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Place a boat first!");
     }
     
     ImGui::End();
@@ -91,7 +102,14 @@ void EditorUI::renderToolPanel() {
         ImGui::Text("Terrain Types:");
         ImGui::Separator();
         
-        // 地形类型选择
+        // 地形类型选择 - 添加空地选项
+        if (ImGui::RadioButton("Empty", m_selectedTerrainType == TerrainType::EMPTY)) {
+            m_selectedTerrainType = TerrainType::EMPTY;
+            m_editor->setCurrentTerrainType(TerrainType::EMPTY);
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.6f, 0.5f, 0.4f, 1.0f), "[Brown]");
+        
         if (ImGui::RadioButton("Grass", m_selectedTerrainType == TerrainType::GRASS)) {
             m_selectedTerrainType = TerrainType::GRASS;
             m_editor->setCurrentTerrainType(TerrainType::GRASS);
@@ -114,33 +132,115 @@ void EditorUI::renderToolPanel() {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[Gray]");
         
         ImGui::Separator();
-        ImGui::Text("Left Click: Place terrain");
+        ImGui::Text("Hold Left Click: Paint terrain");
         ImGui::Text("Right Click + Drag: Pan view");
         ImGui::Text("Scroll: Zoom in/out");
+        ImGui::Text("Ctrl+Z: Undo");
+        
+        ImGui::Separator();
+        if (ImGui::Button("Undo", ImVec2(-1, 0))) {
+            m_editor->undoLastAction();
+        }
     }
     else if (currentMode == EditorMode::BUILDING) {
         ImGui::Text("Object Types:");
         ImGui::Separator();
         
-        // 物体类型选择
-        if (ImGui::RadioButton("House", m_selectedObjectType == ObjectType::HOUSE)) {
-            m_selectedObjectType = ObjectType::HOUSE;
-            m_editor->setCurrentObjectType(ObjectType::HOUSE);
+        if (ImGui::CollapsingHeader("Residential", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::RadioButton("Basic House", m_selectedObjectType == ObjectType::HOUSE)) {
+                m_selectedObjectType = ObjectType::HOUSE;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE);
+            }
+            if (ImGui::RadioButton("Jiangnan House", m_selectedObjectType == ObjectType::HOUSE_STYLE_1)) {
+                m_selectedObjectType = ObjectType::HOUSE_STYLE_1;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE_STYLE_1);
+            }
+            if (ImGui::RadioButton("Garden Villa", m_selectedObjectType == ObjectType::HOUSE_STYLE_2)) {
+                m_selectedObjectType = ObjectType::HOUSE_STYLE_2;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE_STYLE_2);
+            }
+            if (ImGui::RadioButton("Ancestral Hall", m_selectedObjectType == ObjectType::HOUSE_STYLE_3)) {
+                m_selectedObjectType = ObjectType::HOUSE_STYLE_3;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE_STYLE_3);
+            }
+            if (ImGui::RadioButton("Modern Villa", m_selectedObjectType == ObjectType::HOUSE_STYLE_4)) {
+                m_selectedObjectType = ObjectType::HOUSE_STYLE_4;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE_STYLE_4);
+            }
+            if (ImGui::RadioButton("Farm House", m_selectedObjectType == ObjectType::HOUSE_STYLE_5)) {
+                m_selectedObjectType = ObjectType::HOUSE_STYLE_5;
+                m_editor->setCurrentObjectType(ObjectType::HOUSE_STYLE_5);
+            }
+            if (ImGui::RadioButton("Long House", m_selectedObjectType == ObjectType::LONG_HOUSE)) {
+                m_selectedObjectType = ObjectType::LONG_HOUSE;
+                m_editor->setCurrentObjectType(ObjectType::LONG_HOUSE);
+            }
         }
-        
-        if (ImGui::RadioButton("Bridge", m_selectedObjectType == ObjectType::BRIDGE)) {
-            m_selectedObjectType = ObjectType::BRIDGE;
-            m_editor->setCurrentObjectType(ObjectType::BRIDGE);
+
+        if (ImGui::CollapsingHeader("Water Structures", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::RadioButton("Stone Bridge", m_selectedObjectType == ObjectType::BRIDGE)) {
+                m_selectedObjectType = ObjectType::BRIDGE;
+                m_editor->setCurrentObjectType(ObjectType::BRIDGE);
+            }
+            if (ImGui::RadioButton("Arch Bridge", m_selectedObjectType == ObjectType::ARCH_BRIDGE)) {
+                m_selectedObjectType = ObjectType::ARCH_BRIDGE;
+                m_editor->setCurrentObjectType(ObjectType::ARCH_BRIDGE);
+            }
+            if (ImGui::RadioButton("Water Pavilion", m_selectedObjectType == ObjectType::WATER_PAVILION)) {
+                m_selectedObjectType = ObjectType::WATER_PAVILION;
+                m_editor->setCurrentObjectType(ObjectType::WATER_PAVILION);
+            }
+            if (ImGui::RadioButton("Wooden Pier", m_selectedObjectType == ObjectType::PIER)) {
+                m_selectedObjectType = ObjectType::PIER;
+                m_editor->setCurrentObjectType(ObjectType::PIER);
+            }
+            if (ImGui::RadioButton("Player Boat", m_selectedObjectType == ObjectType::BOAT)) {
+                m_selectedObjectType = ObjectType::BOAT;
+                m_editor->setCurrentObjectType(ObjectType::BOAT);
+            }
+            if (ImGui::RadioButton("Fishing Boat", m_selectedObjectType == ObjectType::FISHING_BOAT)) {
+                m_selectedObjectType = ObjectType::FISHING_BOAT;
+                m_editor->setCurrentObjectType(ObjectType::FISHING_BOAT);
+            }
         }
-        
-        if (ImGui::RadioButton("Tree", m_selectedObjectType == ObjectType::TREE)) {
-            m_selectedObjectType = ObjectType::TREE;
-            m_editor->setCurrentObjectType(ObjectType::TREE);
-        }
-        
-        if (ImGui::RadioButton("Boat", m_selectedObjectType == ObjectType::BOAT)) {
-            m_selectedObjectType = ObjectType::BOAT;
-            m_editor->setCurrentObjectType(ObjectType::BOAT);
+
+        if (ImGui::CollapsingHeader("Nature & Decor", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::RadioButton("Tree", m_selectedObjectType == ObjectType::TREE)) {
+                m_selectedObjectType = ObjectType::TREE;
+                m_editor->setCurrentObjectType(ObjectType::TREE);
+            }
+            if (ImGui::RadioButton("Bamboo", m_selectedObjectType == ObjectType::BAMBOO)) {
+                m_selectedObjectType = ObjectType::BAMBOO;
+                m_editor->setCurrentObjectType(ObjectType::BAMBOO);
+            }
+            if (ImGui::RadioButton("Lotus Pond", m_selectedObjectType == ObjectType::LOTUS_POND)) {
+                m_selectedObjectType = ObjectType::LOTUS_POND;
+                m_editor->setCurrentObjectType(ObjectType::LOTUS_POND);
+            }
+            if (ImGui::RadioButton("Wall", m_selectedObjectType == ObjectType::WALL)) {
+                m_selectedObjectType = ObjectType::WALL;
+                m_editor->setCurrentObjectType(ObjectType::WALL);
+            }
+            if (ImGui::RadioButton("Pavilion", m_selectedObjectType == ObjectType::PAVILION)) {
+                m_selectedObjectType = ObjectType::PAVILION;
+                m_editor->setCurrentObjectType(ObjectType::PAVILION);
+            }
+            if (ImGui::RadioButton("Paifang (Gate)", m_selectedObjectType == ObjectType::PAIFANG)) {
+                m_selectedObjectType = ObjectType::PAIFANG;
+                m_editor->setCurrentObjectType(ObjectType::PAIFANG);
+            }
+            if (ImGui::RadioButton("Temple", m_selectedObjectType == ObjectType::TEMPLE)) {
+                m_selectedObjectType = ObjectType::TEMPLE;
+                m_editor->setCurrentObjectType(ObjectType::TEMPLE);
+            }
+            if (ImGui::RadioButton("Lantern", m_selectedObjectType == ObjectType::LANTERN)) {
+                m_selectedObjectType = ObjectType::LANTERN;
+                m_editor->setCurrentObjectType(ObjectType::LANTERN);
+            }
+            if (ImGui::RadioButton("Stone Lion", m_selectedObjectType == ObjectType::STONE_LION)) {
+                m_selectedObjectType = ObjectType::STONE_LION;
+                m_editor->setCurrentObjectType(ObjectType::STONE_LION);
+            }
         }
         
         ImGui::Separator();
@@ -148,9 +248,18 @@ void EditorUI::renderToolPanel() {
         ImGui::Text("Ctrl + Left Click: Delete object");
         ImGui::Text("Right Click + Drag: Rotate view");
         ImGui::Text("Scroll: Zoom in/out");
+        ImGui::Text("Ctrl+Z: Undo");
+        
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Placement Rules:");
+        ImGui::BulletText("Boat: Water only, max 1");
+        ImGui::BulletText("House/Tree: Land only");
         
         ImGui::Separator();
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Object Management:");
+        if (ImGui::Button("Undo", ImVec2(-1, 0))) {
+            m_editor->undoLastAction();
+        }
         if (ImGui::Button("Remove Last Object", ImVec2(-1, 0))) {
             m_editor->removeLastObject();
         }
@@ -212,12 +321,20 @@ void EditorUI::renderScenePanel() {
     
     ImGui::Begin("Scene Management");
     
+    // 游戏模式下禁用场景操作
+    bool isGameMode = m_editor->getCurrentMode() == EditorMode::GAME;
+    
     static char sceneName[128] = "test_scene";
     ImGui::InputText("Scene Name", sceneName, IM_ARRAYSIZE(sceneName));
     
     ImGui::Separator();
     
-    if (ImGui::Button("Save Scene", ImVec2(-1, 30))) {
+    if (isGameMode) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Exit game mode first!");
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+    }
+    
+    if (ImGui::Button("Save Scene", ImVec2(-1, 30)) && !isGameMode) {
         if (m_editor->saveScene(sceneName)) {
             std::cout << "Scene saved successfully: " << sceneName << std::endl;
         } else {
@@ -225,7 +342,7 @@ void EditorUI::renderScenePanel() {
         }
     }
     
-    if (ImGui::Button("Load Scene", ImVec2(-1, 30))) {
+    if (ImGui::Button("Load Scene", ImVec2(-1, 30)) && !isGameMode) {
         if (m_editor->loadScene(sceneName)) {
             std::cout << "Scene loaded successfully: " << sceneName << std::endl;
         } else {
@@ -233,9 +350,13 @@ void EditorUI::renderScenePanel() {
         }
     }
     
-    if (ImGui::Button("Clear Scene", ImVec2(-1, 30))) {
+    if (ImGui::Button("Clear Scene", ImVec2(-1, 30)) && !isGameMode) {
         m_editor->clearScene();
         std::cout << "Scene cleared" << std::endl;
+    }
+    
+    if (isGameMode) {
+        ImGui::PopStyleVar();
     }
     
     ImGui::End();

@@ -11,7 +11,7 @@ namespace WaterTown {
 WaterSurface::WaterSurface(float centerX, float centerZ, float width, float height, int resolution)
     : m_centerX(centerX), m_centerZ(centerZ), m_width(width), m_height(height),
       m_baseHeight(0.0f), m_resolution(resolution), m_VAO(0), m_VBO(0), m_EBO(0),
-      m_vertexCount(0), m_indexCount(0) {
+      m_vertexCount(0), m_indexCount(0), m_useCustomMesh(false) {
     
     // 初始化默认波浪参数（4 个不同方向的波浪）
     m_waves.push_back({glm::vec2(1.0f, 0.0f), 0.15f, 2.0f, 1.0f, 0.3f});
@@ -31,6 +31,33 @@ WaterSurface::~WaterSurface() {
     if (m_EBO) glDeleteBuffers(1, &m_EBO);
 }
 
+void WaterSurface::updateMesh(const std::vector<float>& vertices) {
+    m_useCustomMesh = true;
+    
+    if (m_VAO == 0) {
+        glGenVertexArrays(1, &m_VAO);
+        glGenBuffers(1, &m_VBO);
+    }
+    
+    glBindVertexArray(m_VAO);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    
+    // 如果使用 updateMesh，通常不再使用 EBO (glDrawArrays)
+    m_vertexCount = vertices.size() / 5; // 5 floats per vertex
+    
+    // 位置属性
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // UV 属性
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    glBindVertexArray(0);
+}
+
 void WaterSurface::generateMesh() {
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
@@ -46,9 +73,9 @@ void WaterSurface::generateMesh() {
             float posX = startX + x * stepX;
             float posZ = startZ + z * stepZ;
             
-            // 位置
+            // 位置（始终以 0 为基准，在渲染阶段平移到 m_baseHeight）
             vertices.push_back(posX);
-            vertices.push_back(m_baseHeight);  // Y 会在着色器中计算
+            vertices.push_back(0.0f);
             vertices.push_back(posZ);
             
             // UV 坐标（用于纹理或其他效果）
@@ -104,13 +131,21 @@ void WaterSurface::generateMesh() {
     glBindVertexArray(0);
 }
 
-void WaterSurface::render(Shader* shader, Camera* camera, float time) {
+void WaterSurface::render(Shader* shader,
+                          Camera* camera,
+                          float time,
+                          const glm::vec3& boatPos,
+                          float boatCutoutInner,
+                          float boatCutoutOuter,
+                          glm::vec2 boatForwardXZ,
+                          glm::vec2 boatHalfExtentsXZ,
+                          float boatCutoutFeather) {
     if (!shader || !camera) return;
     
     shader->use();
     
     // 设置 MVP 矩阵
-    glm::mat4 model = glm::mat4(1.0f);
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, m_baseHeight, 0.0f));
     shader->setMat4("uModel", model);
     shader->setMat4("uView", camera->getViewMatrix());
     shader->setMat4("uProjection", camera->getProjectionMatrix());
@@ -135,6 +170,20 @@ void WaterSurface::render(Shader* shader, Camera* camera, float time) {
     // 水面颜色参数
     shader->setVec3("uWaterColor", glm::vec3(0.1f, 0.3f, 0.5f));  // 深蓝色
     shader->setVec3("uLightDir", glm::normalize(glm::vec3(0.5f, 1.0f, 0.3f)));
+
+    // 船只裁剪（避免水出现在船板上）
+    bool useObb = (boatHalfExtentsXZ.x > 0.0f && boatHalfExtentsXZ.y > 0.0f && boatCutoutFeather > 0.0f);
+    bool useCircle = (boatCutoutInner > 0.0f && boatCutoutOuter >= boatCutoutInner);
+    bool useCutout = useObb || useCircle;
+
+    shader->setInt("uUseBoatCutout", useCutout ? 1 : 0);
+    shader->setVec3("uBoatPos", boatPos);
+    shader->setFloat("uBoatCutoutInner", boatCutoutInner);
+    shader->setFloat("uBoatCutoutOuter", boatCutoutOuter);
+    shader->setInt("uBoatCutoutShape", useObb ? 1 : 0);
+    shader->setVec2("uBoatForwardXZ", boatForwardXZ);
+    shader->setVec2("uBoatHalfExtentsXZ", boatHalfExtentsXZ);
+    shader->setFloat("uBoatCutoutFeather", boatCutoutFeather);
     
     // 启用混合（半透明效果）
     glEnable(GL_BLEND);
@@ -142,7 +191,11 @@ void WaterSurface::render(Shader* shader, Camera* camera, float time) {
     
     // 渲染水面
     glBindVertexArray(m_VAO);
-    glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0);
+    if (m_useCustomMesh) {
+         glDrawArrays(GL_TRIANGLES, 0, m_vertexCount);
+    } else {
+         glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0);
+    }
     glBindVertexArray(0);
     
     glDisable(GL_BLEND);

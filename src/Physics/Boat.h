@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <vector>
+#include <functional>
 
 namespace WaterTown {
 
@@ -72,6 +73,11 @@ public:
      * @brief 设置旋转
      */
     void setRotation(float rotation) { m_rotation = rotation; }
+
+    /**
+     * @brief 设置速度
+     */
+    void setSpeed(float speed) { m_speed = speed; }
     
     /**
      * @brief 设置边界限制
@@ -94,6 +100,17 @@ public:
     void addObstacle(const glm::vec3& position, float radius);
     void clearObstacles();
 
+    /**
+     * @brief 仅根据水面高度同步船的姿态（用于非游戏模式）
+     * @param waterSurface 水面引用
+     * @param currentTime 当前时间
+     */
+    void syncToWaterSurface(WaterSurface* waterSurface, float currentTime);
+
+    // 碰撞检测回调：输入世界坐标 (x, z)，返回 true 表示该位置安全（水域），false 表示碰撞（陆地）
+    using CollisionPredicate = std::function<bool(float x, float z)>;
+    void setCollisionPredicate(CollisionPredicate predicate) { m_collisionPredicate = predicate; }
+
 private:
     // 物理参数
     glm::vec3 m_position;       // 位置
@@ -115,14 +132,16 @@ private:
     const float DECELERATION = 1.0f;        // 减速度
     const float TURN_SPEED = 60.0f;         // 转向速度（度/s）
     const float DRAG = 0.5f;                // 水阻力
-    const float BOAT_LENGTH = 2.0f;         // 船长
-    const float BOAT_WIDTH = 0.8f;          // 船宽
-    const float BOAT_RADIUS = 1.0f;         // 碰撞半径
+    const float BOAT_LENGTH = 1.0f;         // 船长
+    const float BOAT_WIDTH = 0.4f;          // 船宽
+    const float BOAT_RADIUS = 0.5f;         // 碰撞半径
+    const float BOAT_WATERLINE_OFFSET = 0.45f; // 船身水线偏移（大幅提高以避免进水）
     
     // 边界和碰撞
     bool m_hasBounds;
     float m_minX, m_maxX, m_minZ, m_maxZ;
     std::vector<Obstacle> m_obstacles;
+    CollisionPredicate m_collisionPredicate;
     
     /**
      * @brief 更新运动

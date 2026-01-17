@@ -2,6 +2,7 @@
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+#include <vector>
 #include "../Editor/SceneEditor.h"
 
 namespace WaterTown {
@@ -32,19 +33,24 @@ public:
     
 private:
     int m_gridSize;
-    GLuint m_vao;
-    GLuint m_vbo;
-    int m_vertexCount;
     
-    /**
-     * @brief 生成网格mesh
-     */
-    void generateMesh();
+    struct TerrainVertex {
+        glm::vec3 position;
+        glm::vec3 normal;
+        glm::vec3 color;
+    };
     
-    /**
-     * @brief 根据地形类型获取颜色
-     */
+    GLuint m_planeVAO, m_planeVBO;
+    
+    // 增加 addWallBricks 声明，这在 Sec 版本的 cpp 中用到，但在 h 文件中通常是辅助函数，这里显式声明以便使用
+    // 注意：如果在 cpp 中是类成员函数，则需要在此声明；如果是静态辅助函数则不需要。
+    // 根据先前的 view_file 结果，addWallBricks 似乎是一个私有成员函数。
+    void addWallBricks(std::vector<TerrainVertex>& vertices, float x, float z, float size, 
+                      bool top, bool bottom, bool left, bool right);
+                      
+    void buildTerrainVertices(SceneEditor* editor, std::vector<TerrainVertex>& outVertices);
     glm::vec3 getTerrainColor(TerrainType type) const;
+    float getTerrainHeight(TerrainType type) const;
 };
 
 } // namespace WaterTown

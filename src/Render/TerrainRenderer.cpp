@@ -68,13 +68,13 @@ void TerrainRenderer::buildTerrainVertices(SceneEditor* editor, std::vector<Terr
     outVertices.reserve(m_gridSize * m_gridSize * 18);
 
     auto addQuad = [&](const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3,
-                       const glm::vec3& normal, const glm::vec3& color) {
-        outVertices.push_back({v0, normal, color});
-        outVertices.push_back({v1, normal, color});
-        outVertices.push_back({v2, normal, color});
-        outVertices.push_back({v0, normal, color});
-        outVertices.push_back({v2, normal, color});
-        outVertices.push_back({v3, normal, color});
+                       const glm::vec3& normal, const glm::vec3& color, int terrainType = 0) {
+        outVertices.push_back({v0, normal, color, terrainType});
+        outVertices.push_back({v1, normal, color, terrainType});
+        outVertices.push_back({v2, normal, color, terrainType});
+        outVertices.push_back({v0, normal, color, terrainType});
+        outVertices.push_back({v2, normal, color, terrainType});
+        outVertices.push_back({v3, normal, color, terrainType});
     };
 
     auto addBox = [&](const glm::vec3& minCorner, const glm::vec3& maxCorner, const glm::vec3& color) {
@@ -168,10 +168,11 @@ void TerrainRenderer::buildTerrainVertices(SceneEditor* editor, std::vector<Terr
             float z0 = tileZ0 - expand * 0.5f;
             float z1 = tileZ1 + expand * 0.5f;
 
-            TerrainVertex v0{{x0, height, z0}, upNormal, color};
-            TerrainVertex v1{{x1, height, z0}, upNormal, color};
-            TerrainVertex v2{{x1, height, z1}, upNormal, color};
-            TerrainVertex v3{{x0, height, z1}, upNormal, color};
+            int terrainTypeInt = static_cast<int>(type);
+            TerrainVertex v0{{x0, height, z0}, upNormal, color, terrainTypeInt};
+            TerrainVertex v1{{x1, height, z0}, upNormal, color, terrainTypeInt};
+            TerrainVertex v2{{x1, height, z1}, upNormal, color, terrainTypeInt};
+            TerrainVertex v3{{x0, height, z1}, upNormal, color, terrainTypeInt};
 
             outVertices.push_back(v0);
             outVertices.push_back(v1);
@@ -240,11 +241,59 @@ void TerrainRenderer::render(SceneEditor* editor, Shader* shader, Camera* camera
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), (void*)(2 * sizeof(glm::vec3)));
     glEnableVertexAttribArray(2);
+    glVertexAttribIPointer(3, 1, GL_INT, sizeof(TerrainVertex), (void*)(3 * sizeof(glm::vec3)));
+    glEnableVertexAttribArray(3);
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
 
     glBindVertexArray(0);
     shader->setBool("uUseVertexColor", false);
+}
+
+void TerrainRenderer::renderByType(SceneEditor* editor, Shader* shader, Camera* camera, TerrainType targetType) {
+    if (!editor || !shader || !camera) {
+        return;
+    }
+
+    // 构建所有顶点
+    std::vector<TerrainVertex> allVertices;
+    buildTerrainVertices(editor, allVertices);
+    
+    // 过滤出目标类型的顶点
+    std::vector<TerrainVertex> filteredVertices;
+    int targetTypeInt = static_cast<int>(targetType);
+    for (const auto& v : allVertices) {
+        if (v.terrainType == targetTypeInt) {
+            filteredVertices.push_back(v);
+        }
+    }
+    
+    if (filteredVertices.empty()) {
+        return;
+    }
+
+    shader->use();
+    shader->setMat4("uModel", glm::mat4(1.0f));
+    shader->setMat4("uView", camera->getViewMatrix());
+    shader->setMat4("uProjection", camera->getProjectionMatrix());
+    shader->setVec3("uViewPos", camera->getPosition());
+    shader->setVec3("uLightPos", 10.0f, 50.0f, 10.0f);
+    shader->setVec3("uLightColor", 1.0f, 1.0f, 1.0f);
+
+    glBindVertexArray(m_planeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_planeVBO);
+    glBufferData(GL_ARRAY_BUFFER, filteredVertices.size() * sizeof(TerrainVertex), filteredVertices.data(), GL_DYNAMIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), (void*)(sizeof(glm::vec3)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), (void*)(2 * sizeof(glm::vec3)));
+    glEnableVertexAttribArray(2);
+
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(filteredVertices.size()));
+
+    glBindVertexArray(0);
 }
 
 } // namespace WaterTown

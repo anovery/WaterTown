@@ -27,6 +27,15 @@ public:
     void render(SceneEditor* editor, Shader* shader, Camera* camera);
     
     /**
+     * @brief 按地形类型渲染
+     * @param editor 场景编辑器
+     * @param shader 着色器
+     * @param camera 相机
+     * @param type 要渲染的地形类型
+     */
+    void renderByType(SceneEditor* editor, Shader* shader, Camera* camera, TerrainType type);
+    
+    /**
      * @brief 设置网格大小
      */
     void setGridSize(int size) { m_gridSize = size; }
@@ -38,13 +47,11 @@ private:
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec3 color;
+        int terrainType;  // 0=EMPTY, 1=GRASS, 2=WATER, 3=STONE
     };
     
     GLuint m_planeVAO, m_planeVBO;
     
-    // 增加 addWallBricks 声明，这在 Sec 版本的 cpp 中用到，但在 h 文件中通常是辅助函数，这里显式声明以便使用
-    // 注意：如果在 cpp 中是类成员函数，则需要在此声明；如果是静态辅助函数则不需要。
-    // 根据先前的 view_file 结果，addWallBricks 似乎是一个私有成员函数。
     void addWallBricks(std::vector<TerrainVertex>& vertices, float x, float z, float size, 
                       bool top, bool bottom, bool left, bool right);
                       

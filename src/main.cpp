@@ -35,6 +35,8 @@ protected:
         // 加载着色器
         m_shader = new Shader("assets/shaders/basic.vert", "assets/shaders/basic.frag");
         m_waterShader = new Shader("assets/shaders/water.vert", "assets/shaders/water.frag");
+        m_grassShader = new Shader("assets/shaders/grass.vert", "assets/shaders/grass.frag");
+        m_stoneShader = new Shader("assets/shaders/stone.vert", "assets/shaders/stone.frag");
         
         // 创建水面
         m_waterSurface = new WaterSurface(0.0f, 0.0f, 160.0f, 160.0f, 100); // 320 * 0.5 = 160
@@ -268,8 +270,19 @@ protected:
         // glBindVertexArray(0);
         
         // === 渲染地形网格(所有模式) ===
-        if (m_sceneEditor && m_terrainRenderer && m_shader) {
-            m_terrainRenderer->render(m_sceneEditor, m_shader, m_camera);
+        if (m_sceneEditor && m_terrainRenderer) {
+            if (m_sceneEditor->getCurrentMode() == EditorMode::TERRAIN) {
+                // 地形编辑模式：使用纯色着色器渲染所有地形
+                m_terrainRenderer->render(m_sceneEditor, m_shader, m_camera);
+            } else {
+                // 建筑/游戏模式：分类型使用独立着色器渲染
+                if (m_grassShader) {
+                    m_terrainRenderer->renderByType(m_sceneEditor, m_grassShader, m_camera, TerrainType::GRASS);
+                }
+                if (m_stoneShader) {
+                    m_terrainRenderer->renderByType(m_sceneEditor, m_stoneShader, m_camera, TerrainType::STONE);
+                }
+            }
         }
         
         // === 渲染放置的物体(所有模式) ===
@@ -325,6 +338,9 @@ protected:
         
         delete m_shader;
         delete m_waterShader;
+        delete m_terrainShader;
+        delete m_grassShader;
+        delete m_stoneShader;
         delete m_waterSurface;
         delete m_sceneEditor;
         delete m_editorUI;
@@ -339,6 +355,9 @@ protected:
 private:
     Shader* m_shader = nullptr;
     Shader* m_waterShader = nullptr;
+    Shader* m_terrainShader = nullptr;
+    Shader* m_grassShader = nullptr;
+    Shader* m_stoneShader = nullptr;
     WaterSurface* m_waterSurface = nullptr;
     SceneEditor* m_sceneEditor = nullptr;
     EditorUI* m_editorUI = nullptr;
